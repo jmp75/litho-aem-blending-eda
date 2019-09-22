@@ -1,5 +1,6 @@
 from scipy import special
-
+import numpy as np
+from pykrige.ok import OrdinaryKriging
 
 def bore_to_fraction(interval_len, bore_dict):
     """
@@ -116,3 +117,20 @@ def overlap(layer, interval):
     else:
         res = layer[0] - interval[1]
     return res
+
+
+def kriging_to_borehole(aem_X, aem_Y , clayFraction, bore_X, bore_Y):
+    """
+    This function do Kriging interpolation of clay fraction in a grid, from AEM data points to bore hole locations.
+    :param aem_X: X coordinations of AEM data points.
+    :param aem_Y: Y coordinations of AEM data points
+    :param clayFraction: clay fraction value of each AEM data position
+    :param bore_X: bore hole locations in X axis
+    :param bore_Y: bore hole locations in Y axis
+    :return:
+    """
+    OK = OrdinaryKriging(aem_X,aem_Y,clayFraction, variogram_model='linear',
+                         verbose=False, enable_plotting=False)
+    z, ss = OK.execute('points', bore_X, bore_Y)
+    return z, ss
+

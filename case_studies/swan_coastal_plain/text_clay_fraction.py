@@ -1,4 +1,4 @@
-from case_studies.swan_coastal_plain.clayfraction import  *
+from case_studies.swan_coastal_plain.clayfraction import *
 import numpy as np
 
 
@@ -42,13 +42,34 @@ def test_translator_function() :
     np.testing.assert_almost_equal(translator_function(50,30,60),0.256774,5)
     np.testing.assert_almost_equal(translator_function(10,30,60),1,5)
     np.testing.assert_almost_equal(translator_function(100,30,60),0,5)
-    print("translator_function all past")
+    print("translator_function all passed")
 
 
-#def test_resist_to_fraction():
+def test_resist_to_fraction():
+    interval = (10,0)
+    resist_dict = {(12,-1): 50}
+    np.testing.assert_almost_equal(resist_to_fraction(interval, resist_dict, translator_function, False), 0.743225,5) # layer cover whole interval
+    ##TODO: more tests for different cases
+    print("resist to fraction all passed")
 
 
+def test_kriging_to_borehole():
+
+    data = np.array([[0.3, 1.2, 0.47],
+                     [1.9, 0.6, 0.56],
+                     [1.1, 3.2, 0.74],
+                     [3.3, 4.4, 1.47],
+                     [4.7, 3.8, 1.74]])
+
+    gridx = np.arange(0.0, 5.5, 0.5)
+    gridy = np.arange(0.0, 5.5, 0.5)
+
+    z,ss = kriging_to_borehole(data[:,0],data[:,1],data[:,2], gridx,gridy)
+    np.testing.assert_equal(len(z),11)
+    print("all tests passed")
 
 
 test_bore_to_fraction()
 test_translator_function()
+test_resist_to_fraction()
+test_kriging_to_borehole()

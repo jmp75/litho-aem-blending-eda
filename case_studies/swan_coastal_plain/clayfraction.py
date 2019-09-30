@@ -1,6 +1,8 @@
 from scipy import special
 import numpy as np
 from pykrige.ok import OrdinaryKriging
+from math import log,sqrt as ln,sqrt
+
 
 def bore_to_fraction(interval_len, bore_dict):
     """
@@ -134,3 +136,41 @@ def kriging_to_borehole(aem_X, aem_Y , clayFraction, bore_X, bore_Y):
     z, ss = OK.execute('points', bore_X, bore_Y)
     return z, ss
 
+
+def regularization_data(fraction_dict):
+    """
+
+    :param fraction_dict: {(x_coordination,y_coordination):(log_fraction,resist_fraction,resist_variance)}
+    :return: Regularization data term
+    """
+    total = sum(fraction_dict.values()[0])
+    reg_sum = 0
+    for coordinate_pair in fraction_dict.keys():
+        log_fraction = fraction_dict[coordinate_pair][0]
+        resist_fraction = fraction_dict[coordinate_pair][1]
+        resist_variance  = fraction_dict[coordinate_pair][2]
+        avg = (total - log_fraction) / (fraction_dict.size()-1)
+        log_deviation = (log_fraction-avg)**2
+        total_variance = log_deviation+resist_variance
+        reg_sum = reg_sum + (log_fraction-resist_fraction)**2/total_variance
+    reg_term = sqrt(reg_sum/fraction_dict.size())
+    return reg_term
+
+
+def regularization_constraint(con_horizontal,con_vertical,tolerant_error):
+    """
+
+    :param con_horizontal: horizontal constraint number
+    :param con_vertical: vertical constraint number
+    :param tolerant_error: len(tolerant_error) = con_horizontal * con_vertical
+    :return:
+    """
+    s = 0
+    for error in tolerant_error:
+        s = s +(ln(con_horizontal)-ln(con_vertical))**2/(ln(error))**2
+    return sqrt((1/len(tolerant_error))*s)
+
+
+def objective_function(N_dat, N_con, reg_dat, reg_con):
+    q = sqrt((N_dat*reg_dat**2+N_con*reg_con**2)/(N_dat+N_con))
+    return q

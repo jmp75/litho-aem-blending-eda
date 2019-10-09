@@ -1,22 +1,37 @@
+
 """
 An attempt to implementing Clay Fraction approach in Pytorch.
 """
-from math import sqrt
+
+from math import sqrt,log
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-import math.log as ln
 import scipy.special as special
-
+from pykrige.ok import OrdinaryKriging
 
 
 class ClayFraction(nn.Module):
-    """Define the computation graph for clay fraction model."""
+    """Define the computation graph for clay fraction model. Without special indication, all parameters/arguments
+    in this class should be tensors"""
 
-    def __init__(self, log_X, log_Y, log_CF, AEM_X, AEM_Y, AEM_resist, constraint_pair, tolerant_err, learning_rate,num_Neighbor):
-        """Init the model with default parameters/hyperparameters."""
+    def __init__(self, log_X, log_Y, log_CF, AEM_X, AEM_Y, AEM_resist, constraint_pair, tolerant_err, learning_rate):
+        """
+        Init the model with default parameters/ hyperparameters. All necessary attributes of the clay fraction model in a
+        3-D grid should be initialized here.
+        :param log_X: the X coordination of lithology borehole data location.
+        :param log_Y: the Y coordination of lithology borehole data location.
+        :param log_CF: the clay fraction of lithology borehole data .
+        The size of log_X,log_Y and log_CF should be consistent. To calculate clay fraction for a single borehole, the
+        function bore_to_fraction in clayfraction.py can be used.
+        :param AEM_X: the X coordination of AEM data.
+        :param AEM_Y: the X coordination of AEM data.
+        :param AEM_resist: the resistivity of AEM data.
+        :param constraint_pair: (list) the constraint factors, [horizontal factor, vertical factor]
+        :param tolerant_err: tolerant error for spatial constraint, the size should be consistent with
+                constraint_pair[0]*constraint_pair[1]
+        :param learning_rate: (float) learning rate
+        """
         super(ClayFraction, self).__init__()
         self.log_X = log_X
         self.log_Y = log_Y
@@ -26,68 +41,102 @@ class ClayFraction(nn.Module):
         self.AEM_resist = AEM_resist
         self.constraint_pair = constraint_pair
         self.tolerant_err = tolerant_err
-        self.neighbor = num_Neighbor
         self.loss_func = self.objective_function
         self.model = nn.Linear(1,1)
-        self.leaning_rate = learning_rate
+        self.learning_rate = learning_rate
         self.optimizer = torch.optim.SGD(self.parameters(), lr=self.learning_rate)
+        #TODO: should the users customize optimizer by themselves?
 
     def forward(self):
-        # raise NotImplementedError
+        """
+        forward propagation
+        :return:
+        """
         fed_out = self.model(self.AEM_resist)
-        self.translator_function(fed_out)
-        interpolated_CF, resist_variance = self.Kriging_interpolation()
+        AEM_CF = self.translator_function(self,fed_out)
+        interpolated_CF, resist_variance = self.Kriging_interpolation(self, AEM_CF)
         return interpolated_CF,resist_variance
 
-    def translator_function(self,fed_out):
+    def translator_function(self,fed_out,interval=None):  #interval: interval length
+        """
+        Translator function for clay fraction model.
+        :param fed_out: the tensor fed out from linear layer
+        :param interval: depth interval that the AEM data covers in the 3-D grid.
+        :return: clay fraction at each AEM data point computed by the translator function
+        """
         k= special.erfcinv(0.05)
-        self.AEM_CF = 0.5*torch.erfc(k*fed_out)
-        return self.AEM_CF
+        AEM_CF = 0.5*torch.erfc(k*fed_out)
+        if not interval is None:
+            acc_cf = torch.sum(AEM_CF*interval,2)/sum(interval)
+            return acc_cf
+        return AEM_CF
 
-
-    def Kriging_interpolation (self):
+    def Kriging_interpolation (self, aem_cf):
+        """
+        implementing Ordinary Kriging interpolation. The algorithm is provided by Pykrige package.
+        :param aem_cf: calculated clay fraction using AEM data and translator function
+        :return: interpolated clay fraction at bore hole location.
+        """
         log_X = self.log_X
         log_Y = self.log_Y
         AEM_X = self.AEM_X
         AEM_Y = self.AEM_Y
-        AEM_CF = self.AEM_CF
-        num = self.neighbor
-        #TODO: implement kriging interpolation in tensor.
-        return 0,0  #interpolated_CF,resist_variance
+        aem_cf = aem_cf
+        OK = OrdinaryKriging(AEM_X.numpy(), AEM_Y.numpy(), aem_cf.numpy(), variogram_model='linear', verbose=False, enable_plotting=False)
+        z, ss = OK.execute('points', log_X.numpy(), log_Y.numpy())
+        return torch.from_numpy(z),torch.from_numpy(ss)   #interpolated_CF,resist_variance
 
     def regularization_data(self,resist_fraction, resist_variance):
+        """
+        Computing R_data in reference
+        :param resist_fraction: interpolated clay fraction at borehole location
+        :param resist_variance: interpolated clay fraction's variance, generated by Pykrige.
+        :return: (float) the R_data factor
+        """
         log_CF = self.log_CF
         total = torch.sum(log_CF)
         length = log_CF.size()[1]
         log_deviation = log_CF- (total-log_CF)/(length-1)
-        log_deviation_trans = torch.transpose(log_deviation,0,1)
-        log_variance_trans = torch.mul(log_deviation_trans,log_deviation_trans)
-        sum_variance_trans = torch.transpose(resist_variance,0,1) +log_variance_trans
-        reciprocal_variance = torch.reciprocal(sum_variance_trans)
-        diff_CF_trans = torch.transpose(log_CF- resist_fraction,0,1)
-        term_trans = torch.mul(diff_CF_trans,reciprocal_variance)
-        term = torch.transpose(term_trans,0,1)
-        sum_term = torch.matmul(term, term_trans)
-        res = sqrt(1/length * sum_term)
+        log_var =torch.squeeze(log_deviation.mul(log_deviation)).double()
+        var = torch.add(log_var,resist_variance.double())
+        lower_term = torch.reciprocal(var)
+        diff_cf = log_CF.double()-resist_fraction.double()
+        upper_term = diff_cf.mul(diff_cf)
+        term = upper_term.mul(lower_term)
+        total = torch.sum(term)
+        res = sqrt(1/length*total)
         return res
 
     def regularization_constraint(self):
+        """
+        Computing R_con in reference
+        :return: R_con
+        """
         constraint_pair = self.constraint_pair
-        con_horizontal  = constraint_pair[0]
+        con_horizontal = constraint_pair[0]
         con_vertical = constraint_pair[1]
-        tolerant_err= self.tolerant_err
+        upper_term = (log(con_horizontal)-log(con_vertical))**2
+        tolerant_err = self.tolerant_err
         log_err = torch.reciprocal(torch.log(tolerant_err))
-        term = torch.mul(log_err,ln(con_horizontal) - ln(con_vertical))
-        trans_err = torch.transpose(term,0,1)
-        mul_err = torch.matmul(log_err,trans_err)
+        lower_term = log_err.mul(log_err)
+        term = upper_term*lower_term
+        total = torch.sum(term)
         length = tolerant_err.size()[1]
-        res = sqrt(1/length * mul_err)
+        res = sqrt(1/length * total)
         return res
 
     def objective_function(self, resist_fraction, resist_variance):
+        """
+        Computing the value of objective function, this can be used for optimizer.
+        :param resist_fraction: interpolated clay fraction
+        :param resist_variance: interpolated variance, generated by Pykrige.
+        :return: the value of objective fucntion at current stage.
+        """
         n_data = self.log_CF.size()[1]
         n_constraint = self.tolerant_err.size()[1]
-        reg_data = self.regularization_data(self, resist_fraction,resist_variance)
-        reg_constraint = self.regularization_constraint(self)
+        reg_data = self.regularization_data(resist_fraction,resist_variance)
+        reg_constraint = self.regularization_constraint()
         res = sqrt((n_data*reg_data**2+n_constraint*reg_constraint**2)/(n_data+n_constraint))
         return res
+
+    #TODO: implement the training part (if applicable).

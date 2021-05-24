@@ -4,20 +4,21 @@ from pykrige.ok import OrdinaryKriging
 from math import log,sqrt as ln,sqrt
 
 
-def bore_to_fraction(interval_len, bore_dict):
+def bore_to_fraction(interval_len,begin_of_depth, bore_dict):
     """
     convert a single bore hole log to clay fraction. the interval length in depth can be customized
     :param interval_len: length for a single interval
+    :param begin_of_depth: the depth where the data grid begins
     :param bore_dict : a dict contains the lithology info, format: {(upper,lower): lithology_type}, the depth of bore
                         hole should be represented in AHD
     :return: a numeric list represents the clay fraction for the borehole
     """
     lower_list = [x[-1] for x in bore_dict.keys()]
-    begin_of_depth = max([x[0] for x in bore_dict.keys()])
+    begin_of_borehole = max([x[0] for x in bore_dict.keys()])
     end_of_depth = min(lower_list)
     interval_list = []
     upper_bound = begin_of_depth
-    lower_bound = interval_len* (begin_of_depth//interval_len)
+    lower_bound = upper_bound-interval_len #interval_len* (begin_of_depth//interval_len)
     while lower_bound >= end_of_depth:
         interval_list.append((upper_bound, lower_bound))
         upper_bound = lower_bound
@@ -25,11 +26,11 @@ def bore_to_fraction(interval_len, bore_dict):
         if lower_bound < end_of_depth:
             interval_list.append((upper_bound, end_of_depth))
             break
-    print(interval_list)
     fraction_dict={}
     for interval in interval_list:
         fraction_dict[interval] = get_fraction(interval,bore_dict)
     return fraction_dict
+
 
 
 def get_fraction(interval,bore_dict):
@@ -40,9 +41,14 @@ def get_fraction(interval,bore_dict):
     :return: clay fraction for a bore hole in a specific interval
     """
     clay_amount = 0
-    interval_len = interval[0]-interval[1]
+    begin_of_borehole = max([x[0] for x in bore_dict.keys()])
+
+    if interval[1]<=begin_of_borehole<=interval[0] :
+        interval_len = begin_of_borehole-interval[1]
+    else:
+        interval_len = interval[0]-interval[1]
     for bore_depth in bore_dict.keys():
-        if bore_dict[bore_depth] =="clay":
+        if bore_dict[bore_depth].lower() =="clay":
             if bore_depth[0] >= interval[0] and bore_depth[1] <= interval[1]: # cover the whole interval
                 clay_amount = interval_len
                 break
@@ -59,7 +65,7 @@ def get_fraction(interval,bore_dict):
     return clay_amount/interval_len
 
 
-def resist_to_fraction(interval, resist_dict, translator_function,training = False, m_low= 40, m_up= 70):
+def resist_to_fraction(interval, resist_dict, translator_function, m_low= 40, m_up= 70):
     """
     calculate clay fraction with resistivity data for a specific location
     :param interval: a tuple (from_depth, to_depth)
@@ -75,10 +81,7 @@ def resist_to_fraction(interval, resist_dict, translator_function,training = Fal
     for layer in resist_dict.keys():
         thickness = overlap(layer, interval)
         if thickness != 0:
-            if not training:
                 res = res + translator_function(resist_dict[layer])*thickness
-            else:
-                res = res + translator_function(resist_dict[layer],m_low,m_up) * thickness
     res = res / interval_len
     return res
 

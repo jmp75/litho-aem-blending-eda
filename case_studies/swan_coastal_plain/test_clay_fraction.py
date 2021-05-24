@@ -3,7 +3,7 @@ import numpy as np
 
 
 def test_bore_to_fraction():
-    bore_dict = {(0.61, 0.0): "subsoil",
+    bore_dict = {(0.61, 0.0): "subsoil", #'clay',
                  (0, -0.61): "clay",
                  (-0.61, -1.52): "boulder",
                  (-1.52, -6.71): "limestone",
@@ -17,9 +17,9 @@ def test_bore_to_fraction():
                  (-40.23, -62.18): "limestone",
                  (-62.18, -77.72): "clay",
                  (-77.72, -86.87): "limestone"}
-    fraction_list = bore_to_fraction(10, bore_dict)
+    fraction_list = bore_to_fraction(10, 10,bore_dict)
     print(fraction_list)
-    np.testing.assert_almost_equal (fraction_list[(0.61, 0.0)], 0)
+    np.testing.assert_almost_equal (fraction_list[(10, 0.0)], 0)
     np.testing.assert_almost_equal(fraction_list[(0.0, -10.0)] , 0.061)
     np.testing.assert_almost_equal(fraction_list[(-10.0, -20.0)] , 0.153)
     np.testing.assert_almost_equal(fraction_list[(-20.0, -30.0)] , 0)
@@ -30,7 +30,7 @@ def test_bore_to_fraction():
     np.testing.assert_almost_equal(fraction_list[(-80, -86.87)] , 0)
     print("bore_to_fraction test all passed")
     bore_dict = {(11, -1): "clay"}
-    fraction_list = bore_to_fraction(10,bore_dict)
+    fraction_list = bore_to_fraction(10,10,bore_dict)
     np.testing.assert_almost_equal(fraction_list[(10,0)],1)
     print("bore_to_fraction test all passed")
 

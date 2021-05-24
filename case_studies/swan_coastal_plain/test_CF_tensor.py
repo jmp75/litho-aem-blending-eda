@@ -34,6 +34,7 @@ def test_kriging_interpolation(aem_cf):
     print('Kriging interpolation dimension test passed')
     return interpolated_cf,interpolated_var
 
+
 def test_regularisation_constraint():
     print(clay_fraction.regularization_constraint())
     print('reg constraint test passed')
@@ -43,7 +44,7 @@ def test_regularisation_data():
     print('reg data test passed')
 
 def test_objective_function():
-    print(clay_fraction.objective_function(interpolated_cf,interpolated_var))
+    print(clay_fraction.regularization_data(interpolated_cf,interpolated_var))
     print('obj function test passed')
 
 aem_cf = test_translator_function()

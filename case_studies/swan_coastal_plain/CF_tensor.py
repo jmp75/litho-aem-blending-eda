@@ -57,7 +57,7 @@ class ClayFraction(nn.Module):
         interpolated_CF, resist_variance = self.Kriging_interpolation(self, AEM_CF)
         return interpolated_CF,resist_variance
 
-    def translator_function(self,fed_out,interval=None):  #interval: interval length
+    def translator_function(self,fed_out,interval):  #interval: list of tuple coresponding to sub-surfaces.
         """
         Translator function for clay fraction model.
         :param fed_out: the tensor fed out from linear layer
@@ -66,10 +66,8 @@ class ClayFraction(nn.Module):
         """
         k= special.erfcinv(0.05)
         AEM_CF = 0.5*torch.erfc(k*fed_out)
-        if not interval is None:
-            acc_cf = torch.sum(AEM_CF*interval,2)/sum(interval)
-            return acc_cf
-        return AEM_CF
+        acc_cf = torch.sum(AEM_CF*interval,2)/sum(interval)
+        return acc_cf
 
     def Kriging_interpolation (self, aem_cf):
         """
